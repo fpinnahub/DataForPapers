@@ -1,0 +1,70 @@
+<!-- ATR/HTR minimal pipeline (estratto) -->
+<api xmlns="http://ws.apache.org/ns/synapse" name="ATR_HTR_Pipeline" context="/atr">
+  <resource methods="POST" uri-template="/run">
+    <inSequence>
+      <!-- 1) Ingestion -->
+      <log level="custom"><property name="step" value="ingestion"/></log>
+      <call>
+        <endpoint>
+          <http method="POST" uri-template="http://mi.local/services/ingestionAPI"/>
+        </endpoint>
+      </call>
+      <enrich>
+        <source type="body" clone="true"/>
+        <target type="property" property="ingestedImageRef"/>
+      </enrich>
+
+      <!-- 2) HTR -->
+      <log level="custom"><property name="step" value="htr"/></log>
+      <payloadFactory media-type="json">
+        <format>{"imageRef":"$1"}</format>
+        <args><arg expression="get-property('ingestedImageRef')"/></args>
+      </payloadFactory>
+      <call>
+        <endpoint>
+          <http method="POST" uri-template="http://mi.local/services/HTR-API"/>
+        </endpoint>
+      </call>
+      <enrich>
+        <source type="body"/><target type="property" property="rawText"/>
+      </enrich>
+
+      <!-- 3) Post-processing (NLP) -->
+      <log level="custom"><property name="step" value="post-processing"/></log>
+      <payloadFactory media-type="json">
+        <format>{"text":"$1"}</format>
+        <args><arg expression="get-property('rawText')"/></args>
+      </payloadFactory>
+      <call>
+        <endpoint>
+          <http method="POST" uri-template="http://mi.local/services/NLP-service"/>
+        </endpoint>
+      </call>
+      <enrich>
+        <source type="body"/><target type="property" property="cleanText"/>
+      </enrich>
+
+      <!-- 4) TEI export -->
+      <log level="custom"><property name="step" value="tei-export"/></log>
+      <payloadFactory media-type="json">
+        <format>{"content":"$1","target":"TEI"}</format>
+        <args><arg expression="get-property('cleanText')"/></args>
+      </payloadFactory>
+      <call>
+        <endpoint>
+          <http method="POST" uri-template="http://mi.local/services/TEI-normalizer"/>
+        </endpoint>
+      </call>
+      <enrich>
+        <source type="body"/><target type="property" property="teiDoc"/>
+      </enrich>
+
+      <!-- Risposta aggregata -->
+      <payloadFactory media-type="json">
+        <format>{"success":true,"tei":"$1"}</format>
+        <args><arg expression="get-property('teiDoc')"/></args>
+      </payloadFactory>
+      <respond/>
+    </inSequence>
+  </resource>
+</api>
